@@ -1,0 +1,350 @@
+---
+title: "Exploratory Data Analysis using ggplot2"
+author: "Bo-Syue Jiang"
+date: "`r format(Sys.time(), '%d %B %Y')`" 
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true  
+    theme: united 
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+## Example datasets <https://data.gov.tw/dataset/6064>
+where file (`001.csv`) can be download.
+
+# Univariate Statistical graph 
+
+```{r Preprocessing}
+library(readr) #read_csv
+mydata <- read_csv("doc/001.csv")
+```
+
+## Bar plot
+
+首先，透過長條圖觀察每筆資料大致樣貌，以電力售電量為例：
+```{r barES}
+library(ggplot2)
+ggplot(mydata,aes(x=1:nrow(mydata),y=`電力售電量(度)`))+
+  geom_bar(stat="identity")+
+  xlab("第i筆資料,i=1至69")
+```
+
+透過相同方式，看所有資料呈現樣貌，並繪製平滑線：
+
+```{r barAllSmooth}
+library(gridExtra) 
+mydata.frame<-data.frame(mydata)
+colnames(mydata.frame) <- colnames(mydata)
+barOrder <- function(x){
+  ggplot(mydata.frame,aes(x=1:nrow(mydata),y=mydata.frame[,x]))+
+    geom_bar(stat="identity")+
+    xlab("第i筆資料,i=1至69")+
+    ylab("")+
+    scale_y_continuous(n.breaks=3)+
+    ggtitle(colnames(mydata.frame[x]))+
+    geom_smooth(color="red",lwd=1.3)  
+}
+barOrder.list<-lapply(c(1:12),FUN=barOrder)
+marrangeGrob(barOrder.list, nrow=4, ncol=3, top="")
+```
+
+## Box plot
+
+可見大部分資料都呈現遞增趨勢，而以盒型圖來觀察每筆資料分佈如下：
+```{r boxAll}
+library(ggthemes)
+boxAll <- function(x){
+  ggplot(mydata.frame,aes(mydata.frame[,x]))+
+    geom_boxplot(color="red")+
+    geom_dotplot(binaxis="x", stackdir="center", dotsize=0.5)+
+    theme_stata()+
+    xlab(colnames(mydata.frame[x]))+
+    scale_x_continuous(breaks=c(median(mydata.frame[,x])))+
+    scale_y_continuous(breaks=0)
+}
+boxAll.list<-lapply(c(2:12),FUN=boxAll)
+marrangeGrob(boxAll.list, nrow=4, ncol=3, top="")
+```
+
+## Histogram
+
+由盒型圖看出，屬於售電量類型的資料，大部分為右傾，屬於用戶數的資料分佈較平均，屬於電價的資料，大部分為左傾，接著我們透過直方圖，並加上密度函數來觀察此結論是否一致：
+
+```{r density}
+mydensity <- function(x){
+  ggplot(mydata.frame,aes(x=mydata.frame[,x]))+
+    geom_histogram(aes(y=..density..),alpha=0.3,fill="red",bins=8)+
+    geom_density(alpha=0.2, fill="blue")+
+    xlab(colnames(mydata[x]))+
+    scale_x_continuous(n.breaks=3)+
+    theme(axis.text.x = element_text(angle=45))
+}
+density.list<-lapply(c(2:12),FUN=mydensity)
+marrangeGrob(density.list, nrow=4, ncol=3, top="")
+```
+
+由直方圖也可看出售電量類型的資料有著右傾的現象，並且在先前的長條圖中，售電量也呈現遞增趨勢，因此可推斷資料中，售電量在前幾筆度數都較低，但筆數較多，而隨著資料收集順序，售電量成長速度快，因此形成右尾分配，最後透過ECDF圖做更詳細的觀察：
+
+## ECDF
+
+```{r ESumecdf}
+ESumecdf<-ggplot(mydata,aes(`售電量合計(度)`))+
+  stat_ecdf(geom = "point") +
+  labs(title="Empirical Cumulative Density Function",
+       y = "售電量合計(累積)", x="售電量合計(度)")
+ESumecdf
+```
+
+資料大多分佈在在圖形前半部分，而後半部資料間隔幅度拉大，售電量成長速度加快，透過計算，可發現以下特徵：
+
+```{r ESumecdf_summary}
+tenBillion <-10000000000
+mid<-mydata$`售電量合計(度)`[(nrow(mydata)+1)/2]
+br<-round(mid/tenBillion,1)
+la<-br*10
+ESumecdf_summary<-ESumecdf+
+  geom_hline(yintercept = 0.5,color="red",linetype="dashed")+
+  geom_vline(xintercept = mid,color="blue",linetype="dashed")+
+  geom_segment(aes(x=mid, y=0, xend=0, yend=0), color="darkgreen",
+               arrow = arrow(length = unit(0.4, "cm")),
+               lwd=1)+ 
+  geom_segment(aes(x=mid, y=0, xend=max(mydata$`售電量合計(度)`),
+                   yend=0), color="brown",lwd=1,
+               arrow = arrow(length = unit(0.4, "cm")))+
+  geom_text(x=mid/2,y=0.08,label="1")+
+  geom_text(x=(max(mydata$`售電量合計(度)`)+mid)/2,
+            y=0.08,
+            label=round((max(mydata$`售電量合計(度)`)-mid)/mid,2))+
+  theme(axis.text.x = element_text(angle=45))
+ESumecdf_summary
+```
+
+由上圖看出，前半部分的資料，與後半部分的資料，在x軸中呈現$1:3.57$，也就是說後半部分的資料售電量是前半部分資料的3倍多，而由先前長條圖也得知，資料是以年份遞增排序，因此可得知，早期的售電量成長幅度較慢，而後期的資料售電量成長幅度較快，其中相差3.57倍，亦即隨著年份增長，每年用電量的增長幅度也加速。  
+
+而以相同的分析方式觀察用戶數，可看出同樣資料分佈在前幾筆累積較快，但成長幅度相較穩定，圖形呈現如下：
+```{r user}
+ggplot(mydata,aes(`用戶數合計(戶)`))+
+  stat_ecdf(geom = "point") +
+  labs(title="Empirical Cumulative Density Function",
+       y = "用戶數合計(累積)", x="用戶數合計(戶)")
+```
+
+# Bivariate statistical graph
+
+首先，觀察隨著年份增加，售電量，用戶數，平均電量的分佈情形：
+
+## Scatter plot
+
+```{r timeSeriesAll}
+TSAll <- function(x) {
+  ggplot(mydata.frame,aes(x=年度,y=mydata.frame[,x]))+
+    geom_point()+
+    geom_line(aes(x=年度,y=mydata.frame[,x],color="red"))+
+    ylab("")+xlab("")+
+    ggtitle(colnames(mydata.frame[x]))+
+    theme_economist()+
+    theme(axis.text.x = element_text(angle=45),
+          axis.title = element_text(size=1))
+}
+TSAll.list<-lapply(c(4,7,12),FUN=TSAll)
+marrangeGrob(TSAll.list, nrow=1, ncol=3, top="")
+```
+
+大部份結論皆和單變量所做的分析一致，隨著年份增長，觀測值隨之增大，然而，售電量與用戶數皆分電力與電燈，其中電燈用戶數又分營業與非營業，因此接著透過直方圖觀察兩變數之間的分佈關係。
+
+而就常理判斷，電價可能與用戶數成反比，以下透過散佈圖觀察是否如理論相符：
+
+```{r}
+ggplot(data=mydata, aes(x=`電燈平均電價(元)`
+                        ,y=`電燈(非營業用)用戶數(戶)`))+
+  geom_point()
+```
+
+以電燈來說，大部分資料隨著電價增長，用戶數仍是上升趨勢，但也可能與科技發展相關，可以從圖中看出，在電價高於3元後，用戶數明顯有下降的趨勢，而電價高於3元也是資料年份後期時，此時電燈用戶較早期而言趨於穩定，然而用戶數卻是下降，可能也代表著在電燈普及後，隨著電價上升，用戶數可能有下降的趨勢存在。
+
+
+## histogram
+
+```{r hist}
+library(tidyverse)
+temp<-gather(mydata,`電燈(非營業用)用戶數(戶)`,
+             `電燈(營業用)用戶數(戶)`,key=電燈用戶型態,
+             value=電燈用戶數)%>%gather(`電燈售電量(度)`,
+                                     `電力售電量(度)`,
+key=售電量型態,value=售電量)%>%gather(`電燈用戶數(戶)`,
+                              `電力用戶數(戶)`,
+                              key=用戶數型態,value=用戶數)%>%
+  gather(`電燈平均電價(元)`,`電力平均電價(元)`,
+         key=電價型態,value=電價)
+
+mydata.trans<-data.frame(temp)
+mydata.trans.hist <- function(x){
+  ggplot(mydata.trans, aes(x=mydata.trans[,x], fill=mydata.trans[,x-1])) +
+    geom_histogram( alpha=0.3,position="identity")+
+    scale_fill_discrete(name=names(mydata.trans[x-1]))+
+    scale_x_continuous(n.breaks=3)+
+    xlab(names(mydata.trans[x]))+
+    theme(axis.text.x = element_text(angle=45))
+  }
+mydata.trans.list <- lapply(c(6,8,10,12),mydata.trans.hist)
+marrangeGrob(mydata.trans.list, nrow=2, ncol=2, top="")
+```
+
+由上圖看出：
+
+*  電燈非營業用戶數遠多於營業用戶數
+*  電燈用戶數遠多於電力用戶數
+*  電力售電量高於電燈售電量
+*  電燈平均電價較電力平均電價高
+
+接著透過比例來觀察這些變數之間的關係。
+
+## Pie
+
+透過圓餅圖，觀察平均電力售電量和平均電燈售電量之間的比例，如下圖：
+```{r pie}
+pLS<-round(mean(mydata.frame[,2]/mydata.frame[,4]),2)
+pES<-round(mean(mydata.frame[,3]/mydata.frame[,4]),2)
+
+temp2<-data.frame(type=c("電力","電燈"),elecSell=c(pES,pLS))
+ggplot(temp2,aes(x="", y=elecSell,fill=type))+
+  geom_bar(width=1, stat="identity")+
+  coord_polar("y", start=0)
+```
+
+電燈大約佔了總售電量的25%左右，如此可見電燈耗電量相當可觀。
+
+## Box plot
+
+盒型圖，小提琴圖與點圖都能夠說明兩變數分配之間的差異，如下所示：
+
+
+```{r twoBox}
+ggplot(temp, aes(x=售電量型態, y=售電量, fill=售電量型態)) +
+  geom_boxplot()
+ggplot(temp, aes(x=用戶數型態, y=用戶數, fill=用戶數型態)) +
+  geom_boxplot()
+```
+
+## Violin
+
+```{r violin}
+ggplot(temp, aes(x=售電量型態, y=售電量,fill=售電量型態)) +
+  geom_violin(color="green",alpha=0.5,trim=FALSE)
+```
+
+## doc plot
+
+```{r}
+ggplot(temp, aes(x=售電量型態, y=售電量)) +
+  geom_dotplot(binaxis="y",stackdir="center",dotsize=0.3,
+               color="red")
+```
+
+
+# Multivariate statistical plot
+
+最後透過多變量統計圖，觀察多個變數之間的關係。
+
+## Scatter plot
+
+首先以散佈圖觀察隨著年度增加，不同變數會有何表現。
+
+### 售電量
+
+隨著年度增加，電力售電量的成長幅度高於電燈售電量，差距逐漸拉大，而電燈售電量看似在兩千年後趨近平穩，但電力售電量仍大幅度成長，如下圖所示：
+
+```{r}
+ggplot(data=temp, aes(x=年度, y=售電量, color=售電量型態))+
+  geom_point(size=3)
+```
+
+### 用戶數
+
+接著觀察電的用戶數，由圖可看出電力用戶數相較於電燈用戶數平穩許多，而電燈用戶數也隨著年份大幅增長，可見電燈愈來愈普及，尚未達到平穩，而電力用戶數以較為平穩，推論電力的使用應該已經在社會上相當普遍，因此不太會有大幅度成長，其中圖形如下所示：
+
+```{r}
+ggplot(data=temp, aes(x=年度, y=用戶數, color=用戶數型態))+
+  geom_point(size=3)
+
+```
+
+### 電燈用戶型態
+
+再者觀察電燈用戶型態，其中可看出早期營業用電燈佔電燈使用比例相當高，而隨著年份增長，電燈逐漸普及，營業用電燈在電燈使用比例上已經逐漸下滑，雖然營業用電燈也逐年成長，但不如非營業用電燈之成長速度來的快，圖形如下：
+
+```{r}
+ggplot(data=temp, aes(x=年度, y=電燈用戶數, color=電燈用戶型態))+
+  geom_point(size=3)
+```
+
+### 電價
+
+最後觀察到電價型態，其散佈圖較無明顯相關，但可以確定的是隨著年份增加，電價也逐漸上升，其中又以電燈較貴。
+
+```{r}
+ggplot(data=temp, aes(x=年度, y=電價, color=電價型態))+
+  geom_point(size=3)
+```
+
+## Bar plot
+
+透過長條圖，觀察隨著不同的售電量大小，平均電價會有何改變，而在此先將售電量以分位距分成三群，小於等於Q1為第一群，在Q1與Q3之間的為第二群，大於等於Q3的為第三群，進而做圖表視覺化分析：
+
+```{r}
+Q1 <- quantile(temp$售電量)[2]
+Q3 <- quantile(temp$售電量)[4]
+
+temp[temp$售電量<=Q1,"class"]<-1
+temp[temp$售電量<Q3&temp$售電量>Q1,"class"]<-2
+temp[temp$售電量>=Q3,"class"]<-3
+
+bardata<-aggregate(temp$電價, by=list(temp$電價型態,temp$class), FUN=mean)
+colnames(bardata)<-c("電價型態","售電量大小","平均電價")
+ggplot(bardata,aes(x=售電量大小,y=平均電價,fill=電價型態))+
+  geom_bar(stat="identity",position="dodge")+
+  xlab("售電量大小")+
+  geom_text(aes(label=round(平均電價,2)), vjust=1.4, color="white",
+            position = position_dodge(0.9))
+```
+
+由上圖可看出隨著售電量愈大，平均電價也愈高，同樣可能與年份有相關。
+
+
+## Text plot
+
+```{r}
+ggplot(data=temp, aes(x=電價, y=用戶數, label=class)) +
+  geom_point() +
+  geom_label()+
+  geom_text(size=4,aes(color=用戶數型態))
+```
+
+
+## Density plot
+
+再藉由分位距分群後，透過機率密度圖看資料變化，由下圖可看出，售電量為1時，代表資料售電量小於Q1，而此類型的資料用戶數較少。
+
+```{r}
+ggplot(temp, aes(x=用戶數, fill=as.factor(class))) +
+  geom_density(alpha=0.4)+
+  scale_fill_discrete(name="售電量大小")
+```
+
+透過單變量，雙變量，多變量的探索性資料分析後，能夠抓住資料大致型態與分佈，並且圖形亦幫助了解資料之間的相關性，而在此資料集中，類別型資料較少，然而也可以做簡單的分群解決此問題，或是做資料的轉換，也能夠發掘更多資訊量。
+
+
+
+
+
+
+
+
+

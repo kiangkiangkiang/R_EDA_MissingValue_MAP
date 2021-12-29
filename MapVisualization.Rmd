@@ -1,0 +1,155 @@
+---
+title: "Visualize Map in R"
+author: "Bo-Syue Jiang"
+date: "`r format(Sys.time(), '%d %B %Y')`" 
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true  
+    theme: united 
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# EX1. **二○二○美國大選，候選人各地區(county)得票數之面量圖**
+## 資料來源: 
+https://github.com/tonmcg/US_County_Level_Election_Results_08-20
+
+## 檔案名稱: 
+2020_US_County_Level_Presidential_Results.csv
+
+## Example 面量圖
+畫「2020美國大選，Donald Trump 和 Joe Biden兩位候選人在美國各區(County)的得票數」之面量圖。
+
+```{r}
+mydata<-read.csv("2020_US_County_Level_Presidential_Results.csv")
+#1
+#install.packages("choroplethrMaps")
+library(choroplethr)
+library(choroplethrMaps)
+data(df_pop_county)
+county_vote<-mydata[,c(2,10)]
+temp<-merge(df_pop_county,county_vote,by.x="region",by.y = "county_fips")
+
+#View(temp)
+temp<-temp[,c(1,3)]
+colnames(temp) <- c("region","value")
+
+library(ggplot2)
+county_choropleth(temp,
+        legend = "Population",
+        num_colors = 1)+ 
+  scale_fill_gradient2(low="blue", mid="grey",high="red",
+                      na.value = "black",midpoint = 0)
+
+```
+
+
+
+# Ex2. **臺中市108年各行政區之「人口數_合計(人)」面量圖**
+## 資料來源: 
+臺中市統計資料查詢平臺(https://govstat.taichung.gov.tw/DgbasWeb/index.aspx)，
+查詢: 資料表式-統計年報(行政區資料) => 貳、人口 => 臺中市人口、密度及性比例 => 
+時間: 107-108; 地區: 全選; 臺中市人口、密度及性比例
+
+## 檔案名稱: 
+query.xlsx
+
+## Example 面量圖
+畫108年臺中市各行政區之「人口數_合計(人)」。地圖來源 使用「Shape files」。 
+
+```{r}
+library(readxl)
+mydata2 <- read_excel("query.xlsx",col_names=F)
+temp <- mydata2[-c(1,2,3),c(2,8)]
+temp<-as.data.frame(temp)
+colnames(temp)<-c("region","population")
+#View(temp)
+
+library(sf)
+taiwan.town.map <- st_read("TOWN_MOI_1080726.shp")
+taichung<- taiwan.town.map[taiwan.town.map$COUNTYNAME == "臺中市",]
+#View(taichung)
+#head(taichung,10)
+
+library(tidyverse)
+taichung<-unite(taichung,region,COUNTYNAME,sep="",TOWNNAME)
+taichung.map<-merge(taichung,temp,by="region")
+#View(taichung.map)
+
+taichung.map$population<-as.numeric(str_replace(taichung.map$population[1:58],',',''))
+
+taichung.map$region<-str_replace(taichung.map$region,"臺中市",'')
+
+options(scipen = 999)
+ggplot(taichung.map)+
+  geom_sf(aes(fill=population))+ 
+  scale_fill_gradient2(low="white", high="red")+
+  geom_sf_text(aes(label = region ), size = 2)
+
+```
+
+
+# Ex3. **標示位置**
+
+## Google Map
+ 
+
+```{r}
+library(RgoogleMaps)
+my.lat <- c(24.9438459,25.1435991,25.0400874,25.0123073,25.1707957)
+my.lon <- c(121.3686133,121.5008672,121.509766,121.4632665,121.4187137)
+
+bb = qbbox(my.lat, my.lon)
+print(bb)
+MyMap <- GetMap.bbox(bb$lonR, bb$latR,
+       destfile = "YOUR_MAP_IMAGE", maptype = "roadmap")
+
+My.markers <- cbind.data.frame(lat = my.lat, lon = my.lon)
+tmp <- PlotOnStaticMap(MyMap, lat = My.markers[,"lat"],
+                 lon = My.markers[,"lon"],
+                 destfile = "YOUR_MAP_IMAGE", cex=2.5, pch=18:10, col=1:3,add=F)
+
+TextOnStaticMap(MyMap, lat = My.markers[,"lat"]+0.01,
+                 lon = My.markers[,"lon"],
+                 labels=c("北大三峽校區(24.9438459,121.3686133)",
+                          "我的家(25.1435991,121.5008672)",
+                          "總統府(25.0400874,121.509766)",
+                          "新北耶誕城(25.0123073,121.4632665)",
+                          "淡水(25.1707957,121.4187137)"), add=T)
+
+
+#install.packages("OpenImageR")
+library(OpenImageR)
+#1
+ntpu <- readImage("YOUR_IMAGE")
+loc <- LatLon2XY.centered(MyMap, lat=My.markers[1, 1], lon=My.markers[1, 2])
+rasterImage(ntpu, loc[[1]], loc[[2]]+30, loc[[1]]+50, loc[[2]]+80)
+
+#2
+myhouse <- readImage("YOUR_IMAGE")
+loc <- LatLon2XY.centered(MyMap, lat=My.markers[2, 1], lon=My.markers[2, 2])
+rasterImage(myhouse, loc[[1]], loc[[2]]+30, loc[[1]]+50, loc[[2]]+80)
+
+#3
+pres <- readImage("YOUR_IMAGE")
+loc <- LatLon2XY.centered(MyMap, lat=My.markers[3, 1], lon=My.markers[3, 2])
+rasterImage(pres, loc[[1]], loc[[2]]+30, loc[[1]]+50, loc[[2]]+80)
+
+#4
+newTai <- readImage("YOUR_IMAGE")
+loc <- LatLon2XY.centered(MyMap, lat=My.markers[4, 1], lon=My.markers[4, 2])
+rasterImage(newTai, loc[[1]], loc[[2]]+30, loc[[1]]+50, loc[[2]]+80)
+
+#5
+aaa <- readImage("YOUR_IMAGE")
+loc <- LatLon2XY.centered(MyMap, lat=My.markers[5, 1], lon=My.markers[5, 2])
+rasterImage(aaa, loc[[1]], loc[[2]]+30, loc[[1]]+50, loc[[2]]+80)
+
+```
+

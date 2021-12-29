@@ -1,0 +1,148 @@
+---
+title: "Missing Value"
+author: "Bo-Syue Jiang"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true  
+    theme: united 
+    highlight: tango
+---
+
+```{r setup, include=FALSE,warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r dataProcessing,results='hide'}
+#myself
+library(tidyverse)
+
+#missing value
+library(mice)
+library(VIM)
+library(lattice)#idk
+library(missForest)#prodNA 產生na
+```
+
+
+# Missing Value
+
+## is.na which
+```{r}
+myvector <- c(10, 20, NA, 30, 40)
+is.na(myvector)
+which(is.na(myvector))
+is.na(myvector) <- 1 #把第一個變成NA
+```
+
+## lm na.action
+lm(y~x, data = mydata, na.action = na.omit)
+
+## mice
+```{r echo=FALSE,results="hide"}
+mydata <- airquality
+head(airquality)
+dim(airquality)
+mydata[4:10,3] <- rep(NA,7)
+mydata[1:5,4] <- NA
+```
+
+```{r}
+md.pattern(mydata)
+```
+
+### md.pairs 交叉表看missing value
+r=observed , m=missing value
+rr=row有值 col有值  
+rm=row有值 col=missing  
+依此類推
+```{r}
+md.pairs(mydata)
+```
+
+
+## VIM
+```{r}
+mydata.aggrplot <- aggr(mydata, col=c('lightblue','red'), numbers=TRUE, prop = TRUE, sortVars=TRUE, labels=names(mydata), cex.axis=.7, gap=3)
+
+```
+
+### marginplot observed和missing一起畫的散佈圖 附各自boxplot
+```{r}
+marginplot(mydata[,c("Ozone", "Solar.R")], col = c("blue", "red"))
+```
+
+## na.omit
+直接忽略那個row  
+以下x1==x2
+```{r}
+mdata <- matrix(rnorm(15), nrow=5)
+mdata[sample(1:15, 4)] <- NA 
+mdata <- as.data.frame(mdata)
+mdata
+(x1 <- na.omit(mdata))
+(x2 <- mdata[complete.cases(mdata),])
+mdata[!complete.cases(mdata),]
+```
+
+## 填值
+
+### KNN
+直接用KNN填airquality[1:4]裡面的NA值，填完會多幾個col是加上imp的，imp代表imputation(填上值)->代表是否有填值
+
+```{r knn}
+names(airquality)
+airquality.imp.median <- kNN(airquality[1:4], k=5)
+head(airquality.imp.median)
+```
+
+其中knn的fun也可以自己帶
+```{r}
+trim_mean <- function(x){
+  mean(x, trim = 0.1)#去掉頭尾10%
+}
+
+airquality.imp.tmean <- kNN(airquality[1:4], k=5, numFun=trim_mean)
+```
+
+### pmm
+用mice的方式填值，方法是pmm，m類似boostrap5次取平均
+原本mydata裡面Ozone有na，現在mydata.ip裡面的Ozone沒有na，反而是5個col的值，就是重複五次後的值，用來填補原本的na
+```{r}
+mydata.ip <- mice(mydata, m=5, maxit=50, meth='pmm', seed=500)
+summary(mydata.ip)
+mydata.ip$imp$Ozone
+```
+
+接著用complete把mice處理後的物件取出完整值，取的方式就是剛才填滿後重複5次的值的第一個(complete(data,1,2,3,4,5...))，如果第二個參數是2就是取填滿值的第2個值
+```{r}
+mydata.completed <- complete(mydata.ip, 1)
+```
+
+透過剛才重複5次且填滿好的值的mice model(mydata.ip)進行回歸，且是5次的回歸，用with一次進行5個回歸，最後透過pool把5次迴歸模型整合，變成一個類似平均的迴歸模型
+```{r}
+modelFit1 <- with(mydata.ip, lm(Temp~ Ozone + Solar.R+Wind))
+summary(pool(modelFit1))
+```
+
+## 產生NA prodNA(library(missForest))
+```{r}
+iris.mis <- prodNA(iris, noNA = 0.1)#產生NA
+
+#從iris.mis內拿出除了Species以外的變數
+iris.mis <- subset(iris.mis, select = -c(Species))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
